@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"sync"
 	"time"
@@ -42,22 +44,21 @@ func NewClient(apiKey string, opts ...ClientOption) *Client {
 	return c
 }
 
-// WithBaseURL sets a custom base URL
 type VoiceChatConfig struct {
-	SampleRate     int
-	NumChannels    int
-	BitsPerSample  int
-	ModelName      string
-	LanguageCode   string
+	SampleRate    int
+	NumChannels   int
+	BitsPerSample int
+	ModelName     string
+	LanguageCode  string
 }
 
 // VoiceChatResponse represents a response from the voice chat
 type VoiceChatResponse struct {
-	Type          string          `json:"type"`
-	Text          string          `json:"text,omitempty"`
-	Emotions      map[string]float64 `json:"emotions,omitempty"`
-	Error         string          `json:"error,omitempty"`
-	IsFinal       bool            `json:"is_final,omitempty"`
+	Type     string             `json:"type"`
+	Text     string             `json:"text,omitempty"`
+	Emotions map[string]float64 `json:"emotions,omitempty"`
+	Error    string             `json:"error,omitempty"`
+	IsFinal  bool               `json:"is_final,omitempty"`
 }
 
 // VoiceChatHandler handles voice chat events
@@ -69,9 +70,9 @@ type VoiceChatHandler interface {
 
 type defaultHandler struct{}
 
-func (h *defaultHandler) OnConnect()                     {}
-func (h *defaultHandler) OnDisconnect(error)            {}
-func (h *defaultHandler) OnResponse(VoiceChatResponse)  {}
+func (h *defaultHandler) OnConnect()                   {}
+func (h *defaultHandler) OnDisconnect(error)           {}
+func (h *defaultHandler) OnResponse(VoiceChatResponse) {}
 
 // Chat represents a chat session
 type Chat struct {
@@ -259,4 +260,3 @@ func (c *Client) readResponses(ctx context.Context, handler VoiceChatHandler) {
 		}
 	}
 }
-
