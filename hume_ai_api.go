@@ -30,8 +30,8 @@ type ClientOption func(*Client)
 func NewClient(apiKey string, opts ...ClientOption) *Client {
 	c := &Client{
 		apiKey:  apiKey,
-		baseURL: "https://api.hume.ai/v1",
-		wsURL:   "wss://api.hume.ai/v1/ws/voice",
+		baseURL: "https://api.hume.ai/v0",
+		wsURL:   "wss://api.hume.ai/v0/ws/voice",
 		httpClient: &http.Client{
 			Timeout: time.Second * 30,
 		},
