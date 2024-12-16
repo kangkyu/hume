@@ -121,6 +121,7 @@ func (c *Client) ListChats(ctx context.Context, params *ListChatsParams) (*ListC
 
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.apiKey))
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-Hume-Api-Key", c.apiKey)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
