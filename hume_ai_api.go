@@ -74,25 +74,38 @@ func (h *defaultHandler) OnConnect()                   {}
 func (h *defaultHandler) OnDisconnect(error)           {}
 func (h *defaultHandler) OnResponse(VoiceChatResponse) {}
 
+// ChatConfig represents the configuration of a chat
+type ChatConfig struct {
+	ID      string `json:"id"`
+	Version int    `json:"version"`
+}
+
 // Chat represents a chat session
 type Chat struct {
-	ID        string    `json:"id"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	Status    string    `json:"status"`
+	ID             string     `json:"id"`
+	ChatGroupID    string     `json:"chat_group_id"`
+	Status         string     `json:"status"`
+	StartTimestamp int64      `json:"start_timestamp"`
+	EndTimestamp   int64      `json:"end_timestamp"`
+	EventCount     int        `json:"event_count"`
+	Metadata       string     `json:"metadata"`
+	Config         ChatConfig `json:"config"`
 }
 
 // ListChatsResponse represents the response from listing chats
 type ListChatsResponse struct {
-	Chats []Chat `json:"chats"`
-	Total int    `json:"total"`
+	PageNumber          int    `json:"page_number"`
+	PageSize            int    `json:"page_size"`
+	TotalPages          int    `json:"total_pages"`
+	PaginationDirection string `json:"pagination_direction"`
+	ChatsPage           []Chat `json:"chats_page"`
 }
 
 // ListChatsParams represents optional parameters for listing chats
 type ListChatsParams struct {
-	Page     int    `json:"page,omitempty"`
-	PageSize int    `json:"page_size,omitempty"`
-	Status   string `json:"status,omitempty"`
+	PageNumber     int  `json:"page_number,omitempty"`
+	PageSize       int  `json:"page_size,omitempty"`
+	AscendingOrder bool `json:"ascending_order,omitempty"`
 }
 
 // ListChats retrieves a list of chat sessions
@@ -107,21 +120,18 @@ func (c *Client) ListChats(ctx context.Context, params *ListChatsParams) (*ListC
 	// Add query parameters if provided
 	if params != nil {
 		q := req.URL.Query()
-		if params.Page > 0 {
-			q.Set("page", fmt.Sprintf("%d", params.Page))
+		if params.PageNumber >= 0 {
+			q.Set("page_number", fmt.Sprintf("%d", params.PageNumber))
 		}
 		if params.PageSize > 0 {
 			q.Set("page_size", fmt.Sprintf("%d", params.PageSize))
 		}
-		if params.Status != "" {
-			q.Set("status", params.Status)
-		}
+		q.Set("ascending_order", fmt.Sprintf("%t", params.AscendingOrder))
 		req.URL.RawQuery = q.Encode()
 	}
 
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.apiKey))
-	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-Hume-Api-Key", c.apiKey)
+	req.Header.Set("Accept", "application/json")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
