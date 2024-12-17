@@ -15,6 +15,51 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+type VoiceChatResponse interface {
+	GetType() string
+}
+
+type ChatMetadata struct {
+	Type        string `json:"type"`
+	ChatGroupID string `json:"chat_group_id"`
+	ChatID      string `json:"chat_id"`
+}
+
+func (c ChatMetadata) GetType() string { return c.Type }
+
+type AssistantMessage struct {
+	Type    string  `json:"type"`
+	Message Message `json:"message"`
+	//Models   Models  `json:"models"`
+	FromText bool `json:"from_text"`
+}
+
+func (a AssistantMessage) GetType() string { return a.Type }
+
+type AudioResponse struct {
+	Type            string `json:"type"`
+	ID              string `json:"id"`
+	Index           int    `json:"index"`
+	Data            string `json:"data"`
+	CustomSessionId string `json:"custom_session_id,omitempty"`
+
+	RawMessage json.RawMessage `json:"-"` // For debugging
+}
+
+func (a AudioResponse) GetType() string { return a.Type }
+
+type AssistantEnd struct {
+	Type string `json:"type"`
+}
+
+func (a AssistantEnd) GetType() string { return a.Type }
+
+type Message struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+	// Add fields according to the Message object structure
+}
+
 // Client handles communication with Hume AI API
 type Client struct {
 	apiKey     string
@@ -44,17 +89,6 @@ func NewClient(apiKey string, opts ...ClientOption) *Client {
 	}
 
 	return c
-}
-
-// VoiceChatResponse represents a response from the voice chat
-type VoiceChatResponse struct {
-	Type            string `json:"type"`
-	ID              string `json:"id"`
-	Index           int    `json:"index"`
-	Data            string `json:"data"`
-	CustomSessionId string `json:"custom_session_id,omitempty"`
-
-	RawMessage json.RawMessage `json:"-"` // For debugging
 }
 
 // VoiceChatHandler handles voice chat events
@@ -445,33 +479,56 @@ func (c *Client) readResponses(ctx context.Context, handler VoiceChatHandler) {
 				handler.OnDisconnect(err)
 				return
 			}
-			// Log raw message for debugging
+			// Log raw message
 			log.Printf("Received message type: %d, raw message: %s", messageType, string(message))
 
-			var response VoiceChatResponse
-			if err := json.Unmarshal(message, &response); err != nil {
-				log.Printf("JSON Unmarshal error: %v", err)
-				log.Printf("Problematic JSON: %s", string(message))
-
-				// Try to at least get the type from raw JSON
-				var rawMap map[string]interface{}
-				if mapErr := json.Unmarshal(message, &rawMap); mapErr == nil {
-					log.Printf("Parsed raw map: %+v", rawMap)
-					if typeStr, ok := rawMap["type"].(string); ok {
-						response.Type = typeStr
-					}
-				}
-
-				if response.Type == "" {
-					response.Type = "unknown"
-				}
+			// First check message type
+			var typeCheck struct {
+				Type string `json:"type"`
+			}
+			if err := json.Unmarshal(message, &typeCheck); err != nil {
+				log.Printf("Error parsing message type: %v", err)
+				continue
 			}
 
-			// Log parsed response
-			log.Printf("Parsed response - Type: %s, ID: %s, Index: %d",
-				response.Type, response.ID, response.Index)
+			var response VoiceChatResponse
+			switch typeCheck.Type {
+			case "chat_metadata":
+				var r ChatMetadata
+				if err := json.Unmarshal(message, &r); err != nil {
+					log.Printf("Error parsing chat metadata: %v", err)
+					continue
+				}
+				response = r
 
-			handler.OnResponse(response)
+			case "assistant_message":
+				var r AssistantMessage
+				if err := json.Unmarshal(message, &r); err != nil {
+					log.Printf("Error parsing assistant message: %v", err)
+					continue
+				}
+				response = r
+
+			case "assistant_end":
+				var r AssistantEnd
+				if err := json.Unmarshal(message, &r); err != nil {
+					log.Printf("Error parsing assistant end: %v", err)
+					continue
+				}
+				response = r
+
+			case "audio_output":
+				var r AudioResponse
+				if err := json.Unmarshal(message, &r); err != nil {
+					log.Printf("Error parsing audio response: %v", err)
+					continue
+				}
+				response = r
+			}
+
+			if response != nil {
+				handler.OnResponse(response)
+			}
 		}
 	}
 }
