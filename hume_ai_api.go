@@ -33,7 +33,7 @@ func NewClient(apiKey string, opts ...ClientOption) *Client {
 	c := &Client{
 		apiKey:  apiKey,
 		baseURL: "https://api.hume.ai/v0",
-		wsURL:   "wss://api.hume.ai/v0/ws/voice",
+		wsURL:   "wss://api.hume.ai/v0",
 		httpClient: &http.Client{
 			Timeout: time.Second * 30,
 		},
@@ -461,7 +461,7 @@ func (c *Client) StartVoiceChat(ctx context.Context, config VoiceChatConfig, han
 	}
 
 	// Construct WebSocket URL with parameters
-	u, err := url.Parse(c.wsURL)
+	u, err := url.Parse(c.wsURL + "/evi/chat")
 	if err != nil {
 		c.mu.Unlock()
 		return fmt.Errorf("parsing WebSocket URL: %w", err)
