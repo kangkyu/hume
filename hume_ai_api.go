@@ -394,15 +394,16 @@ func (c *Client) StartVoiceChat(ctx context.Context, configID string, handler Vo
 }
 
 // SendAudioData sends audio data over the WebSocket connection
-func (c *Client) SendAudioData(data []byte) error {
+func (c *Client) SendAudioData(message map[string]interface{}) error {
 	c.mu.Lock()
-	defer c.mu.Unlock()
+	conn := c.wsConn
+	c.mu.Unlock()
 
-	if c.wsConn == nil {
-		return fmt.Errorf("no active voice chat session")
+	if conn == nil {
+		return fmt.Errorf("no active WebSocket connection")
 	}
 
-	return c.wsConn.WriteMessage(websocket.BinaryMessage, data)
+	return conn.WriteJSON(message)
 }
 
 // StopVoiceChat ends the voice chat session
