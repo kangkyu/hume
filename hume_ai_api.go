@@ -453,39 +453,44 @@ func (c *Client) StartVoiceChat(ctx context.Context, configID string, handler Vo
 		return fmt.Errorf("voice chat session already active")
 	}
 
-	// Construct WebSocket URL with parameters
-	u, err := url.Parse(c.wsURL + "/evi/chat")
+	// Modify URL construction
+	u, err := url.Parse(strings.Replace(c.baseURL, "https://", "wss://", 1) + "/evi/chat")
 	if err != nil {
 		c.mu.Unlock()
 		return fmt.Errorf("parsing WebSocket URL: %w", err)
 	}
 
+	// Prepare query parameters
 	q := u.Query()
 	q.Set("config_id", configID)
-	q.Set("api_key", c.apiKey)
 	u.RawQuery = q.Encode()
 
 	log.Printf("Attempting WebSocket connection to: %s", u.String())
 
 	headers := http.Header{}
-	headers.Set("Authorization", "Bearer "+c.apiKey)
 	headers.Set("X-Hume-Api-Key", c.apiKey)
 
-	// Connect to WebSocket
+	// More robust WebSocket dialer
 	dialer := websocket.Dialer{
-		HandshakeTimeout: 15 * time.Second, // Increased timeout
+		HandshakeTimeout: 15 * time.Second,
 		ReadBufferSize:   1024,
 		WriteBufferSize:  1024,
 	}
 
+	// Attempt connection
 	conn, resp, err := dialer.DialContext(ctx, u.String(), headers)
 	if err != nil {
-		// Log full response details for debugging
+		// Detailed error logging
 		if resp != nil {
-			body, _ := io.ReadAll(resp.Body)
-			log.Printf("Response Status: %s", resp.Status)
-			log.Printf("Response Body: %s", string(body))
+			body, readErr := io.ReadAll(resp.Body)
+			log.Printf("WebSocket Connection Error:")
+			log.Printf("Status: %s", resp.Status)
+			log.Printf("Headers: %+v", resp.Header)
+			if readErr == nil {
+				log.Printf("Response Body: %s", string(body))
+			}
 		}
+		c.mu.Unlock()
 		return fmt.Errorf("websocket connection failed: %w", err)
 	}
 
