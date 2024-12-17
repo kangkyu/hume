@@ -48,11 +48,14 @@ func NewClient(apiKey string, opts ...ClientOption) *Client {
 
 // VoiceChatResponse represents a response from the voice chat
 type VoiceChatResponse struct {
-	Type     string             `json:"type"`
+	Type     string             `json:"type,omitempty"`
 	Text     string             `json:"text,omitempty"`
 	Emotions map[string]float64 `json:"emotions,omitempty"`
 	Error    string             `json:"error,omitempty"`
 	IsFinal  bool               `json:"is_final,omitempty"`
+
+	// Add a field to capture raw JSON for debugging
+	RawMessage json.RawMessage `json:"-"`
 }
 
 // VoiceChatHandler handles voice chat events
@@ -90,120 +93,6 @@ func (h *defaultChatHandler) OnConnect()            {}
 func (h *defaultChatHandler) OnMessage(ChatMessage) {}
 func (h *defaultChatHandler) OnError(error)         {}
 func (h *defaultChatHandler) OnClose()              {}
-
-// StartChat initiates a chat session with a specific config
-
-func (c *Client) StartChat(ctx context.Context, configID string, handler ChatHandler) error {
-	if handler == nil {
-		handler = &defaultChatHandler{}
-	}
-
-	// Construct WebSocket URL
-	u, err := url.Parse(strings.Replace(c.baseURL, "https://", "wss://", 1) + "/evi/chat")
-	if err != nil {
-		return fmt.Errorf("parsing WebSocket URL: %w", err)
-	}
-
-	// Add query parameters
-	q := u.Query()
-	q.Set("config_id", configID)
-	u.RawQuery = q.Encode()
-
-	// Set up WebSocket connection
-	headers := http.Header{}
-	headers.Set("X-Hume-Api-Key", c.apiKey)
-
-	dialer := websocket.Dialer{
-		HandshakeTimeout: 10 * time.Second,
-	}
-
-	conn, _, err := dialer.DialContext(ctx, u.String(), headers)
-	if err != nil {
-		return fmt.Errorf("connecting to WebSocket: %w", err)
-	}
-
-	c.mu.Lock()
-	c.wsConn = conn
-	c.mu.Unlock()
-
-	handler.OnConnect()
-
-	// Start reading messages
-	go c.readChatMessages(ctx, handler)
-
-	return nil
-}
-
-// SendChatMessage sends a message to the chat
-func (c *Client) SendChatMessage(message string) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if c.wsConn == nil {
-		return fmt.Errorf("no active chat session")
-	}
-
-	msg := ChatMessage{
-		Type:    "message",
-		Content: message,
-	}
-
-	return c.wsConn.WriteJSON(msg)
-}
-
-// StopChat ends the chat session
-func (c *Client) StopChat() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if c.wsConn == nil {
-		return nil
-	}
-
-	err := c.wsConn.WriteMessage(
-		websocket.CloseMessage,
-		websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""),
-	)
-	if err != nil {
-		return fmt.Errorf("sending close message: %w", err)
-	}
-
-	err = c.wsConn.Close()
-	c.wsConn = nil
-	return err
-}
-
-func (c *Client) readChatMessages(ctx context.Context, handler ChatHandler) {
-	defer func() {
-		c.mu.Lock()
-		if c.wsConn != nil {
-			c.wsConn.Close()
-			c.wsConn = nil
-		}
-		c.mu.Unlock()
-		handler.OnClose()
-	}()
-
-	for {
-		select {
-		case <-ctx.Done():
-			handler.OnError(ctx.Err())
-			return
-		default:
-			var message ChatMessage
-			err := c.wsConn.ReadJSON(&message)
-			if err != nil {
-				if websocket.IsCloseError(err, websocket.CloseNormalClosure) {
-					return
-				}
-				handler.OnError(err)
-				return
-			}
-
-			handler.OnMessage(message)
-		}
-	}
-}
 
 // Prompt represents the configuration prompt
 type Prompt struct {
@@ -552,19 +441,73 @@ func (c *Client) readResponses(ctx context.Context, handler VoiceChatHandler) {
 			handler.OnDisconnect(ctx.Err())
 			return
 		default:
-			_, message, err := c.wsConn.ReadMessage()
+			// Read message with timeout
+			messageType, message, err := c.wsConn.ReadMessage()
 			if err != nil {
 				handler.OnDisconnect(err)
 				return
 			}
 
+			// Log raw message for debugging
+			log.Printf("Received message type: %d, raw message: %s", messageType, string(message))
+
+			// Handle different message types or parsing
 			var response VoiceChatResponse
 			if err := json.Unmarshal(message, &response); err != nil {
-				handler.OnDisconnect(fmt.Errorf("parsing response: %w", err))
-				return
+				// More detailed error logging
+				log.Printf("JSON Unmarshal error: %v", err)
+				log.Printf("Problematic JSON: %s", string(message))
+
+				// Try to parse as a generic map to investigate
+				var rawMap map[string]interface{}
+				if mapErr := json.Unmarshal(message, &rawMap); mapErr == nil {
+					log.Printf("Parsed map: %+v", rawMap)
+				}
+
+				// Create a fallback response
+				response = VoiceChatResponse{
+					Type:  "error",
+					Error: fmt.Sprintf("JSON parsing failed: %v", err),
+				}
 			}
 
+			// Ensure a type is always set
+			if response.Type == "" {
+				response.Type = "unknown"
+			}
+
+			// Call handler with the response
 			handler.OnResponse(response)
 		}
 	}
+}
+
+// UnmarshalJSON to handle parsing errors
+func (v *VoiceChatResponse) UnmarshalJSON(data []byte) error {
+	// Store raw message for debugging
+	v.RawMessage = json.RawMessage(data)
+
+	// Create a temporary type to avoid recursion
+	type Alias VoiceChatResponse
+	aux := &struct {
+		*Alias
+	}{
+		Alias: (*Alias)(v),
+	}
+
+	if err := json.Unmarshal(data, &aux); err != nil {
+		log.Printf("Detailed JSON parsing error: %v", err)
+		log.Printf("Problematic JSON: %s", string(data))
+
+		// Attempt to extract any available information
+		var generic map[string]interface{}
+		if mapErr := json.Unmarshal(data, &generic); mapErr == nil {
+			v.Type = "partial"
+			v.Error = fmt.Sprintf("Partial parse: %+v", generic)
+		}
+
+		return err
+	}
+
+	return nil
 }
