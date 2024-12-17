@@ -56,6 +56,10 @@ type VoiceChatResponse struct {
 
 	// Add a field to capture raw JSON for debugging
 	RawMessage json.RawMessage `json:"-"`
+
+    ID       string `json:"id,omitempty"`
+    Index    int    `json:"index,omitempty"`
+    Data     string `json:"data,omitempty"` // For Base64 audio data
 }
 
 // VoiceChatHandler handles voice chat events
