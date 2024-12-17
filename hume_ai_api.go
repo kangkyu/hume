@@ -479,11 +479,15 @@ func (c *Client) readResponses(ctx context.Context, handler VoiceChatHandler) {
 		default:
 			messageType, message, err := c.wsConn.ReadMessage()
 			if err != nil {
+				log.Printf("Error reading message in Hume client: %v", err) // Add this
+				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure) {
+					log.Printf("Unexpected WebSocket close in Hume client: %v", err) // Add this
+				}
 				handler.OnDisconnect(err)
 				return
 			}
 			// Log raw message
-			log.Printf("Received message type: %d, raw message: %s", messageType, string(message))
+			log.Printf("Received message type: %d, raw message: %d long", messageType, len(message))
 
 			// First check message type
 			var typeCheck struct {
