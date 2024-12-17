@@ -46,14 +46,6 @@ func NewClient(apiKey string, opts ...ClientOption) *Client {
 	return c
 }
 
-type VoiceChatConfig struct {
-	SampleRate    int
-	NumChannels   int
-	BitsPerSample int
-	ModelName     string
-	LanguageCode  string
-}
-
 // VoiceChatResponse represents a response from the voice chat
 type VoiceChatResponse struct {
 	Type     string             `json:"type"`
@@ -100,6 +92,7 @@ func (h *defaultChatHandler) OnError(error)         {}
 func (h *defaultChatHandler) OnClose()              {}
 
 // StartChat initiates a chat session with a specific config
+
 func (c *Client) StartChat(ctx context.Context, configID string, handler ChatHandler) error {
 	if handler == nil {
 		handler = &defaultChatHandler{}
@@ -449,7 +442,7 @@ func (c *Client) ListChats(ctx context.Context, params *ListChatsParams) (*ListC
 }
 
 // StartVoiceChat initiates a voice chat session
-func (c *Client) StartVoiceChat(ctx context.Context, config VoiceChatConfig, handler VoiceChatHandler) error {
+func (c *Client) StartVoiceChat(ctx context.Context, configID string, handler VoiceChatHandler) error {
 	if handler == nil {
 		handler = &defaultHandler{}
 	}
@@ -468,15 +461,8 @@ func (c *Client) StartVoiceChat(ctx context.Context, config VoiceChatConfig, han
 	}
 
 	q := u.Query()
-	q.Set("sample_rate", fmt.Sprintf("%d", config.SampleRate))
-	q.Set("channels", fmt.Sprintf("%d", config.NumChannels))
-	q.Set("bits_per_sample", fmt.Sprintf("%d", config.BitsPerSample))
-	if config.ModelName != "" {
-		q.Set("model", config.ModelName)
-	}
-	if config.LanguageCode != "" {
-		q.Set("language", config.LanguageCode)
-	}
+	q.Set("config_id", configID)
+	q.Set("api_key", c.apiKey)
 	u.RawQuery = q.Encode()
 
 	log.Printf("Attempting WebSocket connection to: %s", u.String())
