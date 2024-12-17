@@ -48,18 +48,13 @@ func NewClient(apiKey string, opts ...ClientOption) *Client {
 
 // VoiceChatResponse represents a response from the voice chat
 type VoiceChatResponse struct {
-	Type     string             `json:"type,omitempty"`
-	Text     string             `json:"text,omitempty"`
-	Emotions map[string]float64 `json:"emotions,omitempty"`
-	Error    string             `json:"error,omitempty"`
-	IsFinal  bool               `json:"is_final,omitempty"`
+	Type            string `json:"type"`
+	ID              string `json:"id"`
+	Index           int    `json:"index"`
+	Data            string `json:"data"`
+	CustomSessionId string `json:"custom_session_id,omitempty"`
 
-	// Add a field to capture raw JSON for debugging
-	RawMessage json.RawMessage `json:"-"`
-
-    ID       string `json:"id,omitempty"`
-    Index    int    `json:"index,omitempty"`
-    Data     string `json:"data,omitempty"` // For Base64 audio data
+	RawMessage json.RawMessage `json:"-"` // For debugging
 }
 
 // VoiceChatHandler handles voice chat events
@@ -438,80 +433,44 @@ func (c *Client) readResponses(ctx context.Context, handler VoiceChatHandler) {
 		}
 		c.mu.Unlock()
 	}()
-
 	for {
 		select {
 		case <-ctx.Done():
 			handler.OnDisconnect(ctx.Err())
 			return
 		default:
-			// Read message with timeout
 			messageType, message, err := c.wsConn.ReadMessage()
 			if err != nil {
 				handler.OnDisconnect(err)
 				return
 			}
-
 			// Log raw message for debugging
 			log.Printf("Received message type: %d, raw message: %s", messageType, string(message))
 
-			// Handle different message types or parsing
 			var response VoiceChatResponse
 			if err := json.Unmarshal(message, &response); err != nil {
-				// More detailed error logging
 				log.Printf("JSON Unmarshal error: %v", err)
 				log.Printf("Problematic JSON: %s", string(message))
 
-				// Try to parse as a generic map to investigate
+				// Try to at least get the type from raw JSON
 				var rawMap map[string]interface{}
 				if mapErr := json.Unmarshal(message, &rawMap); mapErr == nil {
-					log.Printf("Parsed map: %+v", rawMap)
+					log.Printf("Parsed raw map: %+v", rawMap)
+					if typeStr, ok := rawMap["type"].(string); ok {
+						response.Type = typeStr
+					}
 				}
 
-				// Create a fallback response
-				response = VoiceChatResponse{
-					Type:  "error",
-					Error: fmt.Sprintf("JSON parsing failed: %v", err),
+				if response.Type == "" {
+					response.Type = "unknown"
 				}
 			}
 
-			// Ensure a type is always set
-			if response.Type == "" {
-				response.Type = "unknown"
-			}
+			// Log parsed response
+			log.Printf("Parsed response - Type: %s, ID: %s, Index: %d",
+				response.Type, response.ID, response.Index)
 
-			// Call handler with the response
 			handler.OnResponse(response)
 		}
 	}
-}
-
-// UnmarshalJSON to handle parsing errors
-func (v *VoiceChatResponse) UnmarshalJSON(data []byte) error {
-	// Store raw message for debugging
-	v.RawMessage = json.RawMessage(data)
-
-	// Create a temporary type to avoid recursion
-	type Alias VoiceChatResponse
-	aux := &struct {
-		*Alias
-	}{
-		Alias: (*Alias)(v),
-	}
-
-	if err := json.Unmarshal(data, &aux); err != nil {
-		log.Printf("Detailed JSON parsing error: %v", err)
-		log.Printf("Problematic JSON: %s", string(data))
-
-		// Attempt to extract any available information
-		var generic map[string]interface{}
-		if mapErr := json.Unmarshal(data, &generic); mapErr == nil {
-			v.Type = "partial"
-			v.Error = fmt.Sprintf("Partial parse: %+v", generic)
-		}
-
-		return err
-	}
-
-	return nil
 }
