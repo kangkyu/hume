@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -478,18 +479,28 @@ func (c *Client) StartVoiceChat(ctx context.Context, config VoiceChatConfig, han
 	}
 	u.RawQuery = q.Encode()
 
+	log.Printf("Attempting WebSocket connection to: %s", u.String())
+
+	headers := http.Header{}
+	headers.Set("Authorization", "Bearer "+c.apiKey)
+	headers.Set("X-Hume-Api-Key", c.apiKey)
+
 	// Connect to WebSocket
 	dialer := websocket.Dialer{
-		HandshakeTimeout: 10 * time.Second,
+		HandshakeTimeout: 15 * time.Second, // Increased timeout
+		ReadBufferSize:   1024,
+		WriteBufferSize:  1024,
 	}
 
-	headers := make(map[string][]string)
-	headers["Authorization"] = []string{"Bearer " + c.apiKey}
-
-	conn, _, err := dialer.Dial(u.String(), headers)
+	conn, resp, err := dialer.DialContext(ctx, u.String(), headers)
 	if err != nil {
-		c.mu.Unlock()
-		return fmt.Errorf("connecting to WebSocket: %w", err)
+		// Log full response details for debugging
+		if resp != nil {
+			body, _ := io.ReadAll(resp.Body)
+			log.Printf("Response Status: %s", resp.Status)
+			log.Printf("Response Body: %s", string(body))
+		}
+		return fmt.Errorf("websocket connection failed: %w", err)
 	}
 
 	c.wsConn = conn
