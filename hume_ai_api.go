@@ -129,6 +129,13 @@ func (c *Client) StartVoiceChat(ctx context.Context, configID string, handler Vo
 	// Prepare query parameters
 	q := u.Query()
 	q.Set("config_id", configID)
+
+	// Add chat_group_id if available in context
+	if chatGroupID, ok := ctx.Value("chat_group_id").(string); ok && chatGroupID != "" {
+		q.Set("resumed_chat_group_id", chatGroupID)
+		log.Printf("Resuming chat with group ID: %s", chatGroupID)
+	}
+
 	u.RawQuery = q.Encode()
 
 	log.Printf("Attempting WebSocket connection to: %s", u.String())
