@@ -298,22 +298,49 @@ func (c *Client) IsActive() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	// Check both the connection and its status
-	if c.wsConn == nil {
-		c.isActive = false
+	if !c.isActive || c.wsConn == nil {
 		return false
 	}
 
-	return c.isActive
+	// Optional: try a ping to verify connection
+	err := c.wsConn.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(time.Second))
+	if err != nil {
+		log.Printf("Connection check failed: %v", err)
+		// Don't modify state here since we only have a read lock
+		return false
+	}
+
+	return true
 }
 
-func (c *Client) ResetState() {
+func (c *Client) ResetState() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	log.Printf("Resetting Hume client state")
+
 	if c.wsConn != nil {
-		c.wsConn.Close()
+		// Send close message first
+		err := c.wsConn.WriteMessage(
+			websocket.CloseMessage,
+			websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""),
+		)
+		if err != nil {
+			log.Printf("Warning: error sending close message: %v", err)
+		}
+
+		// Give a small window for the close message to be sent
+		time.Sleep(100 * time.Millisecond)
+
+		// Then close the connection
+		err = c.wsConn.Close()
+		if err != nil {
+			log.Printf("Warning: error closing connection: %v", err)
+		}
+		c.wsConn = nil
 	}
-	c.wsConn = nil
+
 	c.isActive = false
+	log.Printf("Hume client state reset completed")
+	return nil
 }
