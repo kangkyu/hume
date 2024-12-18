@@ -110,6 +110,8 @@ func (c *Client) StartVoiceChat(ctx context.Context, configID string, handler Vo
 	if handler == nil {
 		handler = &defaultHandler{}
 	}
+	// Add logging
+	log.Printf("Starting voice chat with config ID: %s", configID)
 
 	c.mu.Lock()
 	if c.wsConn != nil {
@@ -117,7 +119,7 @@ func (c *Client) StartVoiceChat(ctx context.Context, configID string, handler Vo
 		return fmt.Errorf("voice chat session already active")
 	}
 
-	// Modify URL construction
+	// Build WebSocket URL
 	u, err := url.Parse(strings.Replace(c.baseURL, "https://", "wss://", 1) + "/evi/chat")
 	if err != nil {
 		c.mu.Unlock()
@@ -158,9 +160,11 @@ func (c *Client) StartVoiceChat(ctx context.Context, configID string, handler Vo
 		return fmt.Errorf("websocket connection failed: %w", err)
 	}
 
+	// After connection is established
 	c.wsConn = conn
 	c.mu.Unlock()
 
+	log.Printf("WebSocket connection established successfully")
 	handler.OnConnect()
 
 	// Start reading responses
@@ -177,6 +181,12 @@ func (c *Client) SendAudioData(message map[string]interface{}) error {
 
 	if conn == nil {
 		return fmt.Errorf("no active WebSocket connection")
+	}
+
+	// Add logging
+	msgType, ok := message["type"].(string)
+	if ok {
+		log.Printf("Sending message type: %s", msgType)
 	}
 
 	return conn.WriteJSON(message)
@@ -279,7 +289,6 @@ func (c *Client) readResponses(ctx context.Context, handler VoiceChatHandler) {
 	}
 }
 
-// 
 type WebsocketMessage struct {
 	Type    string          `json:"type"`
 	Payload json.RawMessage `json:"payload,omitempty"`
