@@ -64,7 +64,7 @@ type Message struct {
 type Client struct {
 	apiKey     string
 	baseURL    string
-	mu         sync.Mutex
+	mu         sync.RWMutex
 	wsConn     *websocket.Conn
 	httpClient *http.Client
 	isActive   bool
@@ -295,7 +295,25 @@ func (c *Client) readResponses(ctx context.Context, handler VoiceChatHandler) {
 }
 
 func (c *Client) IsActive() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	// Check both the connection and its status
+	if c.wsConn == nil {
+		c.isActive = false
+		return false
+	}
+
+	return c.isActive
+}
+
+func (c *Client) ResetState() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.wsConn != nil && c.isActive
+
+	if c.wsConn != nil {
+		c.wsConn.Close()
+	}
+	c.wsConn = nil
+	c.isActive = false
 }
