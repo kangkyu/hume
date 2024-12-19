@@ -2,6 +2,7 @@ package hume
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -67,11 +68,18 @@ type Client struct {
 	mu         sync.RWMutex
 	wsConn     *websocket.Conn
 	httpClient *http.Client
+	tlsConfig  *tls.Config // For test
 	isActive   bool
 }
 
 // ClientOption allows customizing the client
 type ClientOption func(*Client)
+
+func WithTLSConfig(config *tls.Config) ClientOption {
+	return func(c *Client) {
+		c.tlsConfig = config
+	}
+}
 
 // NewClient creates a new Hume AI client
 func NewClient(apiKey string, opts ...ClientOption) *Client {
@@ -146,6 +154,7 @@ func (c *Client) StartVoiceChat(ctx context.Context, configID string, handler Vo
 		HandshakeTimeout: 15 * time.Second,
 		ReadBufferSize:   1024,
 		WriteBufferSize:  1024,
+		TLSClientConfig:  c.tlsConfig, // Use the TLS config if provided
 	}
 
 	// Attempt connection
@@ -206,12 +215,15 @@ func (c *Client) StopVoiceChat() error {
 		return nil
 	}
 
-	err := c.wsConn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+	log.Println("Stopping voice chat")
+	err := c.wsConn.WriteMessage(websocket.CloseMessage,
+		websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
 	if err != nil {
-		return fmt.Errorf("sending close message: %w", err)
+		log.Printf("Error sending close message: %v", err)
 	}
 
 	err = c.wsConn.Close()
+	log.Printf("Connection closed, err: %v", err)
 	c.wsConn = nil
 	return err
 }
