@@ -116,13 +116,15 @@ func (c *Client) StartVoiceChat(ctx context.Context, configID string, handler Vo
 	if handler == nil {
 		handler = &defaultHandler{}
 	}
-	// Add logging
 	log.Printf("Starting voice chat with config ID: %s", configID)
 
 	c.mu.Lock()
 	if c.wsConn != nil {
 		c.mu.Unlock()
-		return fmt.Errorf("voice chat session already active")
+		log.Printf("Existing connection found, closing it first")
+		c.wsConn.Close()
+		c.wsConn = nil
+		c.mu.Lock()
 	}
 
 	// Build WebSocket URL
@@ -160,6 +162,7 @@ func (c *Client) StartVoiceChat(ctx context.Context, configID string, handler Vo
 	// Attempt connection
 	conn, resp, err := dialer.DialContext(ctx, u.String(), headers)
 	if err != nil {
+		c.mu.Unlock()
 		// Detailed error logging
 		if resp != nil {
 			body, readErr := io.ReadAll(resp.Body)
@@ -170,12 +173,12 @@ func (c *Client) StartVoiceChat(ctx context.Context, configID string, handler Vo
 				log.Printf("Response Body: %s", string(body))
 			}
 		}
-		c.mu.Unlock()
 		return fmt.Errorf("websocket connection failed: %w", err)
 	}
 
 	// After connection is established
 	c.wsConn = conn
+	c.isActive = true
 	c.mu.Unlock()
 
 	log.Printf("WebSocket connection established successfully")
@@ -237,21 +240,36 @@ func (c *Client) readResponses(ctx context.Context, handler VoiceChatHandler) {
 		}
 		c.mu.Unlock()
 	}()
+
 	for {
 		select {
 		case <-ctx.Done():
 			handler.OnDisconnect(ctx.Err())
 			return
 		default:
-			messageType, message, err := c.wsConn.ReadMessage()
+			// Add connection check
+			c.mu.RLock()
+			conn := c.wsConn
+			c.mu.RUnlock()
+
+			if conn == nil {
+				log.Printf("WebSocket connection is nil, exiting read loop")
+				handler.OnDisconnect(fmt.Errorf("websocket connection is nil"))
+				return
+			}
+
+			messageType, message, err := conn.ReadMessage()
 			if err != nil {
-				log.Printf("Error reading message in Hume client: %v", err) // Add this
+				log.Printf("Error reading message in Hume client: %v", err)
 				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure) {
-					log.Printf("Unexpected WebSocket close in Hume client: %v", err) // Add this
+					log.Printf("Unexpected WebSocket close in Hume client: %v", err)
 				}
 				handler.OnDisconnect(err)
 				return
 			}
+
+			// Process message...
+
 			// Log raw message
 			log.Printf("Received message type: %d, raw message: %d long", messageType, len(message))
 
